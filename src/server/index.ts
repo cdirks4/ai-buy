@@ -13,7 +13,7 @@ Format the response as a shopping-friendly description. If multiple items are vi
 
 //enum for the different models
 enum VisionModel {
-  GPT_4_VISION = "gpt-4-vision-preview-v2", // Updated to latest version
+  GPT_4_VISION = "gpt-4o-mini", // Updated to latest version
 }
 
 enum AiProviderEndpoints {
@@ -26,8 +26,8 @@ enum AiProviderEndpoints {
 
 const VISION_MODEL = VisionModel.GPT_4_VISION;
 const VISION_ENDPOINT = AiProviderEndpoints.OPENAI;
-const SAVED_DATA = "../public/data.json";
-const IMAGES_DIR = "../public/images";
+const SAVED_DATA = join(process.cwd(), "public", "data.json");
+const IMAGES_DIR = join(process.cwd(), "public", "images");
 
 //Facebook Messenger whitelists this localhost port so is the only one you can currently use
 const PORT = 3103;
@@ -99,6 +99,37 @@ const PROMPTS = {
     5. Activity or event occurring`,
 };
 
+// Add these interfaces near the top of the file, after the enums
+interface VisionRequestBody {
+  imageUrl: string;
+  type?: AnalysisType;
+}
+
+interface OpenAIResponse {
+  choices: Array<{
+    message: {
+      content: string;
+    };
+  }>;
+}
+
+// Add this function after the interfaces and before handleVisionRequest
+async function processImageUrl(url: string): Promise<string> {
+  if (url.startsWith('blob:')) {
+    // For blob URLs, download and convert to base64
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.status}`);
+    }
+    const blob = await response.blob();
+    const arrayBuffer = await blob.arrayBuffer();
+    const base64 = Buffer.from(arrayBuffer).toString('base64');
+    const mimeType = blob.type || 'image/jpeg';
+    return `data:${mimeType};base64,${base64}`;
+  }
+  return url;
+}
+
 async function handleVisionRequest(request: Request) {
   if (
     request.method !== "POST" ||
@@ -108,9 +139,13 @@ async function handleVisionRequest(request: Request) {
   }
 
   try {
-    const { imageUrl, type = AnalysisType.SCENE } = await request.json();
-    const responseContent = await analyzeImage(imageUrl, type);
-    await saveData(imageUrl, responseContent, type);
+    const body = await request.json() as VisionRequestBody;
+    if (!body.imageUrl) {
+      return new Response("imageUrl is required", { status: 400 });
+    }
+    const type = body.type || AnalysisType.SCENE;
+    const responseContent = await analyzeImage(body.imageUrl, type);
+    await saveData(body.imageUrl, responseContent, type);
     return new Response(
       JSON.stringify({
         content: responseContent,
@@ -134,6 +169,9 @@ async function analyzeImage(imageUrl: string, type: AnalysisType) {
     throw new Error("OPENAI_API_KEY not found in environment variables");
   }
 
+  // Process the image URL first
+  const processedImageUrl = await processImageUrl(imageUrl);
+
   const body = {
     model: VISION_MODEL,
     messages: [
@@ -143,7 +181,7 @@ async function analyzeImage(imageUrl: string, type: AnalysisType) {
           { type: "text", text: PROMPTS[type] },
           {
             type: "image_url",
-            image_url: { url: imageUrl },
+            image_url: { url: processedImageUrl },
           },
         ],
       },
@@ -170,7 +208,7 @@ async function analyzeImage(imageUrl: string, type: AnalysisType) {
   }
 
   console.log("Vision Analysis Successful");
-  const data = await response.json();
+  const data = (await response.json()) as OpenAIResponse;
   return data.choices[0].message.content;
 }
 
@@ -180,6 +218,7 @@ async function saveData(
   type: AnalysisType
 ) {
   try {
+    // Create directories if they don't exist
     await mkdir(dirname(SAVED_DATA), { recursive: true });
     await mkdir(IMAGES_DIR, { recursive: true });
 
@@ -190,11 +229,30 @@ async function saveData(
 
     const timestamp = new Date().getTime();
     const imageFileName = `${type}_${timestamp}.jpg`;
-
     const imagePath = join(IMAGES_DIR, imageFileName);
 
     const imageBuffer = await imageResponse.arrayBuffer();
     await writeFile(imagePath, Buffer.from(imageBuffer));
+
+    // Initialize data array
+    let data = [];
+    try {
+      if (await exists(SAVED_DATA)) {
+        console.log("Reading existing data from", SAVED_DATA);
+        const storedData = await readFile(SAVED_DATA, "utf8");
+        data = JSON.parse(storedData);
+      } else {
+        console.log("Creating new data file at", SAVED_DATA);
+      }
+    } catch (readError) {
+      console.error("Error reading data file:", readError);
+      // Continue with empty array if file doesn't exist or is corrupt
+    }
+
+    if (!Array.isArray(data)) {
+      console.log("Existing data is not an array, resetting to empty array");
+      data = [];
+    }
 
     const createdObject = {
       time: new Date().toISOString(),
@@ -206,23 +264,28 @@ async function saveData(
       targetSearchReady: true,
     };
 
-    let data = [];
-    try {
-      console.log("Reading stored clothing data");
-      const storedData = await readFile(SAVED_DATA, "utf8");
-      data = JSON.parse(storedData);
-    } catch (readError) {
-      console.log("Creating new clothing data file");
-    }
-
     data.push(createdObject);
+
+    // Ensure the directory exists before writing
+    await mkdir(dirname(SAVED_DATA), { recursive: true });
     await writeFile(SAVED_DATA, JSON.stringify(data, null, 2));
 
-    console.log(`Clothing analysis saved to ${imagePath}`);
+    console.log(`Data saved to ${SAVED_DATA}`);
+    console.log(`Image saved to ${imagePath}`);
     return createdObject;
   } catch (error) {
     console.error(`Failed to save ${type} data:`, error);
     throw error;
+  }
+}
+
+// Add this helper function at the top with other imports
+async function exists(path: string): Promise<boolean> {
+  try {
+    await readFile(path);
+    return true;
+  } catch {
+    return false;
   }
 }
 
