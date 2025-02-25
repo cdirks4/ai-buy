@@ -1,5 +1,10 @@
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { dirname, join } from "path";
+import * as insightface from "@insightface/node";
+import { PythonShell } from "python-shell";
+import { tmpdir } from "os";
+import { writeFile as writeFileTemp } from "fs/promises";
+import { join as joinPath } from "path";
 
 // Use this pre-prompt to customize what you want your specified vision model todo
 const PRE_PROMPT = `Describe any clothing items visible in this image in a way that could be used for online shopping searches. Focus on:
@@ -103,6 +108,7 @@ const PROMPTS = {
 interface VisionRequestBody {
   imageUrl: string;
   type?: AnalysisType;
+  metadata?: any; // Add metadata to request body
 }
 
 interface OpenAIResponse {
@@ -115,7 +121,7 @@ interface OpenAIResponse {
 
 // Add this function after the interfaces and before handleVisionRequest
 async function processImageUrl(url: string): Promise<string> {
-  if (url.startsWith('blob:')) {
+  if (url.startsWith("blob:")) {
     // For blob URLs, download and convert to base64
     const response = await fetch(url);
     if (!response.ok) {
@@ -123,8 +129,8 @@ async function processImageUrl(url: string): Promise<string> {
     }
     const blob = await response.blob();
     const arrayBuffer = await blob.arrayBuffer();
-    const base64 = Buffer.from(arrayBuffer).toString('base64');
-    const mimeType = blob.type || 'image/jpeg';
+    const base64 = Buffer.from(arrayBuffer).toString("base64");
+    const mimeType = blob.type || "image/jpeg";
     return `data:${mimeType};base64,${base64}`;
   }
   return url;
@@ -139,22 +145,32 @@ async function handleVisionRequest(request: Request) {
   }
 
   try {
-    const body = await request.json() as VisionRequestBody;
+    const body = (await request.json()) as VisionRequestBody;
     if (!body.imageUrl) {
       return new Response("imageUrl is required", { status: 400 });
     }
-    const type = body.type || AnalysisType.SCENE;
-    const responseContent = await analyzeImage(body.imageUrl, type);
-    await saveData(body.imageUrl, responseContent, type);
+
+    // Use the metadata from the request if available
+    const metadata =
+      body.metadata || (await extractImageMetadata(body.imageUrl));
+    console.log("Received metadata:", metadata);
+
     return new Response(
       JSON.stringify({
-        content: responseContent,
+        content: {
+          metadata,
+          timestamp: new Date().toISOString(),
+          message: "Original metadata from browser",
+        },
         timeReceived: new Date().toISOString(),
-        type,
+        type: body.type || AnalysisType.SCENE,
       }),
       {
         status: 200,
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...CORS_HEADERS.headers,
+        },
       }
     );
   } catch (error) {
@@ -163,53 +179,127 @@ async function handleVisionRequest(request: Request) {
   }
 }
 
+interface BiometricMetadata {
+  faceEmbedding?: number[];
+  faceQuality?: number;
+  landmarks?: number[][];
+  deterministic_id?: string;
+}
+
+interface ImageMetadata {
+  dimensions?: { width: number; height: number };
+  format?: string;
+  size?: number;
+  created?: Date;
+  biometric?: BiometricMetadata;
+}
+
+// Initialize InsightFace model
+const faceAnalyzer = await insightface.create({
+  name: "buffalo_l",
+  modelPath: "./models",
+});
+
+// Add export keyword to the function
+export async function extractBiometricMetadata(
+  imageBuffer: Buffer
+): Promise<BiometricMetadata> {
+  try {
+    // Save image to temp file
+    const tempPath = joinPath(tmpdir(), `face_${Date.now()}.jpg`);
+    await writeFileTemp(tempPath, imageBuffer);
+
+    // Run Python script
+    const result = await new Promise((resolve, reject) => {
+      PythonShell.run(
+        "src/server/face_analyzer.py",
+        {
+          args: [tempPath],
+          pythonPath: "python3",
+        },
+        (err, output) => {
+          if (err) reject(err);
+          resolve(output ? JSON.parse(output[0]) : {});
+        }
+      );
+    });
+
+    // Create deterministic hash from face embedding
+    const embedding = (result as any).embedding;
+    if (!embedding) return {};
+
+    const deterministicId = crypto
+      .createHash("sha256")
+      .update(Buffer.from(embedding))
+      .digest("hex");
+
+    return {
+      faceEmbedding: embedding,
+      landmarks: (result as any).landmarks,
+      faceQuality: (result as any).det_score,
+      deterministic_id: deterministicId,
+    };
+  } catch (error) {
+    console.error("Failed to extract biometric data:", error);
+    return {};
+  }
+}
+
+// Update the existing extractImageMetadata function
+async function extractImageMetadata(imageUrl: string): Promise<ImageMetadata> {
+  try {
+    const response = await fetch(imageUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.status}`);
+    }
+
+    const buffer = await response.arrayBuffer();
+    const imageBuffer = Buffer.from(buffer);
+
+    const metadata: ImageMetadata = {
+      size: buffer.byteLength,
+      format: response.headers.get("content-type") || undefined,
+      biometric: await extractBiometricMetadata(imageBuffer),
+    };
+
+    // Create an image in memory to get dimensions
+    if (typeof Image !== "undefined") {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          metadata.dimensions = {
+            width: img.width,
+            height: img.height,
+          };
+          resolve(metadata);
+        };
+        img.src = imageUrl;
+      });
+    }
+
+    return metadata;
+  } catch (error) {
+    console.error("Failed to extract image metadata:", error);
+    return {};
+  }
+}
+
 async function analyzeImage(imageUrl: string, type: AnalysisType) {
-  const token = process.env.OPENAI_API_KEY;
-  if (!token) {
-    throw new Error("OPENAI_API_KEY not found in environment variables");
-  }
+  // Extract metadata before processing
+  const metadata = await extractImageMetadata(imageUrl);
+  console.log("Image metadata:", metadata);
 
-  // Process the image URL first
-  const processedImageUrl = await processImageUrl(imageUrl);
-
-  const body = {
-    model: VISION_MODEL,
-    messages: [
-      {
-        role: "user",
-        content: [
-          { type: "text", text: PROMPTS[type] },
-          {
-            type: "image_url",
-            image_url: { url: processedImageUrl },
-          },
-        ],
-      },
-    ],
-    max_tokens: 500,
-    temperature: 0.7,
-  };
-
-  console.log("Sending request to OpenAI Vision API for clothing analysis");
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
+  // For testing: Return metadata as description instead of making API call
+  return JSON.stringify(
+    {
+      metadata,
+      type,
+      timestamp: new Date().toISOString(),
+      message: "Metadata extraction test - No API call made",
     },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    console.log("Vision API Request Failed");
-    const errorText = await response.text();
-    console.error("Error details:", errorText);
-    throw new Error(`API request failed with status: ${response.status}`);
-  }
-
-  console.log("Vision Analysis Successful");
-  const data = (await response.json()) as OpenAIResponse;
-  return data.choices[0].message.content;
+    null,
+    2
+  );
 }
 
 async function saveData(

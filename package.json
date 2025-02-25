@@ -8,8 +8,9 @@
     "typescript": "^5.2.2"
   },
   "dependencies": {
+    "dotenv": "^16.3.1",
     "openai": "^4.0.0",
-    "dotenv": "^16.3.1"
+    "python-shell": "^5.0.0"
   },
   "scripts": {
     "dev": "bun run --watch ./src/server/index.ts",
