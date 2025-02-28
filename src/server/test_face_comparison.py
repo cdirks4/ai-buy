@@ -52,6 +52,10 @@ class TestFaceComparison(unittest.TestCase):
             os.path.join(self.base_path, "person4.jpg")
         ]
         
+        # Verify all test images exist before running comparison
+        for path in image_paths:
+            self.assertTrue(os.path.exists(path), f"Test image not found: {path}")
+        
         matching_pair, similarity, all_similarities = compare_faces(image_paths)
         
         # Lower threshold for cosine similarity

@@ -22,10 +22,48 @@ javascript: (function () {
   // Function to send image to API
   async function sendImageToAPI(imageUrl) {
     try {
-      console.log("Sending image to API:", imageUrl);
+      // Extract image metadata including location
+      const img = new Image();
+      const metadata = await new Promise((resolve) => {
+        img.onload = () => {
+          const meta = {
+            width: img.width,
+            height: img.height,
+            timestamp: new Date().toISOString(),
+          };
+
+          // Try to get location if available
+          if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+              (position) => {
+                meta.location = {
+                  latitude: position.coords.latitude,
+                  longitude: position.coords.longitude,
+                  accuracy: position.coords.accuracy,
+                };
+                resolve(meta);
+              },
+              (error) => {
+                console.log("Location not available:", error.message);
+                resolve(meta);
+              }
+            );
+          } else {
+            resolve(meta);
+          }
+        };
+        img.src = imageUrl;
+      });
+
+      console.log("Image metadata:", metadata);
+
+      // Send both image and metadata to API
       const response = await fetch("http://localhost:3103/api/vision", {
         method: "POST",
-        body: JSON.stringify({ imageUrl }),
+        body: JSON.stringify({
+          imageUrl,
+          metadata,
+        }),
         headers: {
           "Content-Type": "application/json",
         },

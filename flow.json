@@ -1,0 +1,32 @@
+{
+  "contracts": {
+    "PersonBounty": {
+      "source": "./src/contracts/PersonBounty.cdc",
+      "aliases": {
+        "testing": "0x0000000000000007"
+      }
+    }
+  },
+  "networks": {
+    "emulator": "127.0.0.1:3569",
+    "mainnet": "access.mainnet.nodes.onflow.org:9000",
+    "testing": "127.0.0.1:3569",
+    "testnet": "access.devnet.nodes.onflow.org:9000"
+  },
+  "accounts": {
+    "connor": {
+      "address": "05804c927df2c8e7",
+      "key": {
+        "type": "file",
+        "location": "connor.pkey"
+      }
+    }
+  },
+  "deployments": {
+    "testnet": {
+      "connor": [
+        "PersonBounty"
+      ]
+    }
+  }
+}
