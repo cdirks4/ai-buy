@@ -1,13 +1,35 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import "./EigenLayerVerifier.sol";
+import "./BytesLib.sol";
+
 contract PersonBounty {
+    using BytesLib for bytes;
+
+    IEigenLayerVerifier public eigenVerifier;
+    mapping(bytes32 => bool) public usedNullifiers;
+
     struct PersonData {
         string id;
-        uint256[] faceEmbedding;
-        uint256[][] landmarks;
+        string ipfsHash; // Contains face embeddings and landmarks
         uint256 detectionScore;
-        uint256 timestamp;
+        uint256 verifiedAt;
+        bytes32 nullifier;
+        bytes32 commitment;
+    }
+
+    // Remove the duplicate PersonData struct (around line 33)
+
+    // Add event declaration
+    event PersonCreated(
+        string indexed id,
+        string ipfsHash,
+        bytes32 indexed nullifier
+    );
+
+    constructor(address _eigenVerifier) {
+        eigenVerifier = IEigenLayerVerifier(_eigenVerifier);
     }
 
     struct Bounty {
@@ -38,8 +60,7 @@ contract PersonBounty {
 
     function createPerson(
         string memory id,
-        uint256[] memory faceEmbedding,
-        uint256[][] memory landmarks,
+        string memory ipfsHash,
         uint256 detectionScore
     ) public {
         require(bytes(id).length > 0, "Invalid ID");
@@ -47,22 +68,61 @@ contract PersonBounty {
 
         PersonData memory person = PersonData({
             id: id,
-            faceEmbedding: faceEmbedding,
-            landmarks: landmarks,
+            ipfsHash: ipfsHash,
             detectionScore: detectionScore,
-            timestamp: block.timestamp
+            verifiedAt: block.timestamp,
+            nullifier: bytes32(0),
+            commitment: bytes32(0)
         });
+
         people[id] = person;
     }
 
-    function createBounty(
-        string memory personId,
-        uint256 reward
-    ) public payable {
+    function createPersonWithProof(
+        string memory id,
+        string memory ipfsHash,
+        bytes memory proof,
+        bytes memory publicInputs,
+        uint256 detectionScore
+    ) public {
+        // Verify the ZK proof first
+        require(
+            eigenVerifier.verifyProof(proof, publicInputs),
+            "Invalid face proof"
+        );
+
+        // Add replay protection
+        bytes32 nullifier = bytes32(publicInputs.slice(0, 32));
+        require(!usedNullifiers[nullifier], "Proof already used");
+        usedNullifiers[nullifier] = true;
+
+        // Add commitment verification
+        bytes32 commitment = bytes32(publicInputs.slice(32, 32));
+        require(
+            keccak256(abi.encodePacked(ipfsHash)) == commitment,
+            "Invalid commitment"
+        );
+
+        // Create person with verified data
+        PersonData memory person = PersonData({
+            id: id,
+            ipfsHash: ipfsHash,
+            detectionScore: detectionScore,
+            verifiedAt: block.timestamp,
+            nullifier: nullifier,
+            commitment: commitment
+        });
+
+        people[id] = person;
+        emit PersonCreated(id, ipfsHash, nullifier);
+    }
+
+    function createBounty(string memory personId, uint256 reward) public payable {
         require(bytes(people[personId].id).length > 0, "Person must exist");
-        require(msg.value == reward, "Must send exact reward amount");
+        require(msg.value >= reward, "Insufficient bounty amount");
 
         uint256 bountyId = nextBountyId++;
+        
         Bounty memory bounty = Bounty({
             personId: personId,
             reward: reward,
@@ -77,55 +137,11 @@ contract PersonBounty {
 
         emit BountyCreated(bountyId, personId, reward);
     }
+}
 
-    function getBountyById(
-        uint256 bountyId
-    )
-        public
-        view
-        returns (
-            string memory personId,
-            uint256 reward,
-            bool isActive,
-            address creator,
-            uint256 createdAt
-        )
-    {
-        Bounty memory bounty = bounties[bountyId];
-        require(bounty.createdAt > 0, "Bounty does not exist");
-        return (
-            bounty.personId,
-            bounty.reward,
-            bounty.isActive,
-            bounty.creator,
-            bounty.createdAt
-        );
-    }
-
-    function getPersonBounties(
-        string memory personId
-    ) public view returns (uint256[] memory) {
-        return personBounties[personId];
-    }
-
-    function redeemBounty(uint256 bountyId) public {
-        Bounty storage bounty = bounties[bountyId];
-        require(bounty.createdAt > 0, "Bounty does not exist");
-        require(bounty.isActive, "Bounty is not active");
-
-        bounty.isActive = false;
-        payable(msg.sender).transfer(bounty.reward);
-
-        emit BountyRedeemed(bountyId, msg.sender, bounty.reward);
-    }
-
-    function getActiveBountiesCount() public view returns (uint256) {
-        uint256 count = 0;
-        for (uint256 i = 1; i < nextBountyId; i++) {
-            if (bounties[i].isActive) {
-                count++;
-            }
-        }
-        return count;
-    }
+interface IEigenLayerVerifier {
+    function verifyProof(
+        bytes memory proof,
+        bytes memory publicInputs
+    ) external pure returns (bool);
 }

@@ -1,11 +1,14 @@
 const hre = require("hardhat");
+const { ethers } = require("hardhat");
 
 async function main() {
   console.log("Deploying PersonBounty contract to Flow EVM testnet...");
 
-  // Deploy the contract
-  const PersonBounty = await hre.ethers.getContractFactory("PersonBounty");
-  const personBounty = await PersonBounty.deploy();
+  const eigenVerifierAddress = "0x385532b29A6F01EB8AA641219e18BEDbCaaC5B08";
+
+  // Deploy the contract with the verifier address
+  const PersonBounty = await ethers.getContractFactory("PersonBounty");
+  const personBounty = await PersonBounty.deploy(eigenVerifierAddress);
   await personBounty.waitForDeployment();
 
   const address = await personBounty.getAddress();
@@ -23,7 +26,7 @@ async function main() {
       address: address,
       contract: "contracts/PersonBounty.sol:PersonBounty",
       constructorArguments: [],
-      network: "flowEvmTestnet"
+      network: "flowEvmTestnet",
     });
     console.log("Contract verified successfully!");
   } catch (error) {
@@ -38,7 +41,10 @@ async function main() {
 
   console.log("Deployment complete!");
   console.log("Contract address:", address);
-  console.log("View on Flow Explorer:", `https://evm-testnet.flowscan.io/address/${address}`);
+  console.log(
+    "View on Flow Explorer:",
+    `https://evm-testnet.flowscan.io/address/${address}`
+  );
 }
 
 main()
