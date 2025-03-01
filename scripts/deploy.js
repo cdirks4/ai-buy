@@ -4,11 +4,9 @@ const { ethers } = require("hardhat");
 async function main() {
   console.log("Deploying PersonBounty contract to Flow EVM testnet...");
 
-  const eigenVerifierAddress = "0x385532b29A6F01EB8AA641219e18BEDbCaaC5B08";
-
-  // Deploy the contract with the verifier address
+  // Deploy the contract without constructor arguments
   const PersonBounty = await ethers.getContractFactory("PersonBounty");
-  const personBounty = await PersonBounty.deploy(eigenVerifierAddress);
+  const personBounty = await PersonBounty.deploy();
   await personBounty.waitForDeployment();
 
   const address = await personBounty.getAddress();
