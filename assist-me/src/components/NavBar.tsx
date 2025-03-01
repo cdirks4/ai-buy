@@ -28,7 +28,7 @@ export function NavBar() {
                 height={50}
               />
               <span className="text-xl font-bold bg-gradient-to-r from-gray-100 to-gray-400 bg-clip-text text-transparent">
-                DeFi Assistant
+                Intellifi
               </span>
             </Link>
 
@@ -43,16 +43,7 @@ export function NavBar() {
               >
                 Home
               </Link>
-              <Link
-                href="/verify"
-                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                  isActive("/verify")
-                    ? "text-white bg-white/10"
-                    : "text-gray-300 hover:text-white hover:bg-white/5"
-                }`}
-              >
-                Verify
-              </Link>
+
               <Link
                 href="/bounties"
                 className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
@@ -61,7 +52,7 @@ export function NavBar() {
                     : "text-gray-300 hover:text-white hover:bg-white/5"
                 }`}
               >
-                Bounty
+                Bounties
               </Link>
               <Link
                 href="/deploy"

@@ -15,7 +15,7 @@ export default function Home() {
         <div className="text-center mb-16">
           <div className="flex justify-center mb-6">
             <Image
-              src="/person-bounty-logo.png"
+              src="/better-hd.png"
               alt="PersonBounty Logo"
               width={120}
               height={120}
@@ -27,7 +27,6 @@ export default function Home() {
           </h1>
           <p className="text-xl text-gray-400 max-w-2xl mx-auto">
             Create and manage person bounties with AI-powered facial recognition
-            on Flow
           </p>
         </div>
 
@@ -62,41 +61,21 @@ export default function Home() {
                 AI-Powered Recognition
               </h3>
               <p className="text-gray-400">
-                Advanced facial recognition technology to accurately identify
-                and track persons
-              </p>
-            </div>
-
-            <div className="card bg-white/5 rounded-xl p-6 backdrop-blur-sm border border-white/10">
-              <h3 className="text-xl font-semibold mb-4">Flow Blockchain</h3>
-              <p className="text-gray-400">
-                Secure and efficient bounty management on Flow's EVM-compatible
-                network
+                Advanced facial recognition technology to verify identities
+                securely and accurately
               </p>
             </div>
 
             <div className="card bg-white/5 rounded-xl p-6 backdrop-blur-sm border border-white/10">
               <h3 className="text-xl font-semibold mb-4">
-                Smart Bounty System
+                Decentralized Bounties
               </h3>
               <p className="text-gray-400">
-                Create, track, and manage bounties with automated verification
+                Create and manage bounties using smart contracts on the
+                blockchain
               </p>
             </div>
           </div>
-        </div>
-
-        {/* Network Info */}
-        <div className="mt-16 text-center">
-          <p className="text-sm text-gray-500">Running on Flow EVM Testnet</p>
-          <a
-            href={`https://testnet.flowscan.org/contract/${process.env.NEXT_PUBLIC_CONTRACT_ADDRESS}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm text-blue-500 hover:text-blue-400 transition-colors"
-          >
-            View Contract
-          </a>
         </div>
       </main>
     </div>

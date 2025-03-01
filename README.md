@@ -1,119 +1,106 @@
-# Vision Shop Assistant
+````markdown
+# Face Verification Bounty Platform
 
-An AI-powered shopping assistant that uses Meta Ray-Ban Smart Glasses to analyze products and make informed purchase decisions through voice commands.
+A decentralized platform for creating and managing face-verification bounties using blockchain technology.
+
+🎥 [Watch Demo Video](https://www.loom.com/share/36f8a82776474fe39ab4605d490627c2?sid=ea189b69-583d-4374-ae78-48e5f46732ec)
 
 ## Features
 
-- Voice-activated product analysis
-- Real-time visual product recognition
-- Multiple analysis categories:
-  - Clothing and accessories
-  - Food and beverages
-  - Tech products
-  - Art and collectibles
-  - Scene and environment context
-- Local product history tracking
-- Cross-platform shopping integration
+- Facial Recognition-based Bounty System
+- Decentralized Identity Verification
+- Secure IPFS Data Storage
+- Smart Contract Integration
+- Privacy-Preserving Face Matching
+- Automated Reward Distribution
+
+## Deployed Contracts
+
+### Flow EVM Testnet
+
+- PersonBounty Contract: [0x7a90bbC4D2278764DB01820Dd482d759428ddE91](https://evm-testnet.flowscan.io/address/0x7a90bbC4D2278764DB01820Dd482d759428ddE91)
+- FaceRegistry Contract: [0x3E3490E3ad2F8de670B67Cd0704d00FdcfAb72f0](https://evm-testnet.flowscan.io/address/0x3E3490E3ad2F8de670B67Cd0704d00FdcfAb72f0)
+
+### Zircuit Testnet
+
+- PersonBounty Contract: [0xca5af4B9a6cd7dBDFdd039D28Cd198c529123B01](https://explorer.testnet.zircuit.com/address/0xca5af4B9a6cd7dBDFdd039D28Cd198c529123B01)
+- FaceRegistry Contract: [0x5E9a18cDBE0cEf60d76538217226A31B8e964F5f](https://explorer.testnet.zircuit.com/address/0x5E9a18cDBE0cEf60d76538217226A31B8e964F5f)
 
 ## Prerequisites
 
-- [Meta Ray-Ban Smart Glasses](https://about.fb.com/news/2023/09/new-ray-ban-meta-smart-glasses/)
-- [OpenAI API Key](https://platform.openai.com/)
-- Alternative Facebook/Messenger account
-- Chromium-based browser
-- [Bun](https://bun.sh/) runtime
+- Node.js 18+
+- Python 3.8+ (for face analysis)
+- Metamask or compatible Web3 wallet
+- OpenCV dependencies
 
 ## Quick Start
 
 1. Clone the repository
-2. Create `.env` file from `env.example` and add your OpenAI API key
-3. Install dependencies:
+2. Install dependencies:
 
-````bash
-bun install
-
-
-4. Start the server:
 ```bash
-bun dev
+npm install
+```
 ````
 
-## Setup Guide
+````
 
-### 1. Messenger Group Chat Setup
+3. Install Python dependencies:
+```bash
+pip install -r src/server/requirements.txt
+````
 
-1. Create a new Messenger group chat with 2 other Facebook accounts
-2. Remove one account (keeping only your main and alt account)
-3. Rename the chat to your desired AI service (e.g., "ChatGPT")
-4. Set a group photo (optional)
-5. Set a nickname for your alt account
+4. Create .env file and configure:
 
-### 2. Meta View App Configuration
+- PRIVATE_KEY
+- NEXT_PUBLIC_CONTRACT_ADDRESS
+- PINATA_JWT
+- NEXT_PUBLIC_RPC_URL
 
-1. Open Meta View app
-2. Navigate to Communications section
-3. Disconnect and reconnect your Messenger account to sync new chats
+5. Start the development server:
 
-### 3. Browser Extension Setup
+```bash
+npm run dev
+```
 
-1. Login to messenger.com with your alt account
-2. Open your newly created group chat
-3. Create a new bookmark with the code from bookmarklet.js
-4. Click the bookmark to start monitoring
-
-## Usage
-
-### Voice Commands
-
-Say "Hey Meta, analyze this [product/item]" to:
-
-- Capture product image
-- Receive detailed product analysis
-- Get shopping recommendations
-- Compare prices (coming soon)
-- Track purchase history (coming soon)
-
-### Analysis Categories
-
-- **Clothing**: Style, fit, material, and fashion recommendations
-- **Food**: Ingredients, nutrition, and dietary considerations
-- **Tech**: Specifications, features, and compatibility
-- **Art**: Authentication, valuation, and collection advice
-- **Scene**: Shopping environment and retail context
-
-## Development
-
-### Server Endpoints
-
-- POST /api/vision : Process images through GPT4 Vision
-- GET /api/status : Check server health
-
-### Project Structure
+## Project Structure
 
 ```plaintext
-meta-vision-api/
+/
+├── contracts/           # Smart contracts
+│   ├── PersonBounty.sol
+│   └── FaceRegistry.sol
+├── scripts/            # Deployment scripts
 ├── src/
-│   ├── server.ts      # Main server implementation
-│   └── bookmarklet.js # Browser integration
-├── public/
-│   ├── images/        # Stored analyzed images
-│   └── data.json     # Analysis results
-└── .env              # Configuration
+│   ├── server/        # Face analysis backend
+│   └── components/    # Frontend components
+└── assist-me/         # Next.js frontend app
 ```
+
+## Core Features
+
+### Face Verification
+
+- Secure biometric data handling
+- Privacy-preserving matching
+- IPFS-based storage
+
+### Bounty System
+
+- Create bounties with rewards
+- Verify and claim bounties
+- Automated payment distribution
+
+### Smart Contracts
+
+- Decentralized identity management
+- Secure reward distribution
+- Transparent verification process
 
 ## Contributing
 
-Feel free to submit issues and enhancement requests!
+Contributions are welcome! Please read our contributing guidelines before submitting pull requests.
 
-## Credits
+## License
 
-Created by Devon Crebbin
-
-## Future Development
-
-- Price comparison integration
-- Purchase automation
-- Shopping history analytics
-- Multi-store inventory checking
-- Personal style profiling
-- Budget tracking and recommendations
+This project is licensed under the MIT License - see the LICENSE file for details.

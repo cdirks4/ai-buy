@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { usePrivy, useUser } from "@privy-io/react-auth";
 import { useContract } from "@/hooks/useContract";
 import Image from "next/image";
@@ -9,13 +9,13 @@ import { PersonBountyService } from "@/services/personBounty";
 import { ethers } from "ethers";
 import { useRouter } from "next/navigation";
 import { useWallets } from "@privy-io/react-auth";
-import { FaceApiService } from "@/services/faceApi"; // Add this import
+import { FaceApiService } from "@/services/faceApi";
 import toast from "react-hot-toast";
-// Add this import at the top with other imports
 import { useAgentWallet } from "@/hooks/useAgentWallet";
 import { Button } from "@/components/ui/Button";
 
-export default function VerifyPage() {
+// Create a separate component for the verification content
+function VerifyContent() {
   const router = useRouter();
   const { authenticated, user } = usePrivy();
   const { wallets } = useWallets();
@@ -243,5 +243,14 @@ export default function VerifyPage() {
         )}
       </div>
     </div>
+  );
+}
+
+// Main page component with Suspense boundary
+export default function VerifyPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <VerifyContent />
+    </Suspense>
   );
 }
