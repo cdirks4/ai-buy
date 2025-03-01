@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { usePrivy } from "@privy-io/react-auth";
+import { usePrivy, useUser } from "@privy-io/react-auth";
 import { useContract } from "@/hooks/useContract";
 import Image from "next/image";
 import { usePersonBounty } from "@/hooks/usePersonBounty";
@@ -17,68 +17,47 @@ import { Button } from "@/components/ui/Button";
 
 export default function VerifyPage() {
   const router = useRouter();
-  const { authenticated } = usePrivy();
+  const { authenticated, user } = usePrivy();
   const { wallets } = useWallets();
   const { loading: bountyLoading } = usePersonBounty();
   const searchParams = useSearchParams();
   const bountyId = searchParams.get("bountyId");
   const [isClaimLoading, setIsClaimLoading] = useState(false);
 
+  const { isConnected: isAgentConnected, signer: agentSigner } =
+    useAgentWallet();
+
   const handleClaimBounty = async () => {
-    if (!bountyData || isClaimLoading) return;
+    if (!bountyData || isClaimLoading || !user?.id) return;
 
     try {
       setIsClaimLoading(true);
-      const wallet = wallets[0];
-      if (!wallet) throw new Error("No wallet connected");
 
-      // Get the raw provider first
-      const ethereumProvider = await wallet.getEthereumProvider();
-      if (!ethereumProvider) throw new Error("No Ethereum provider available");
+      if (!isAgentConnected || !agentSigner) {
+        throw new Error("Agent wallet not connected");
+      }
 
-      // Switch to Flow EVM network first
-      await ethereumProvider
-        .request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: "0x221" }], // 545 in hex
-        })
-        .catch(async (switchError) => {
-          // If network doesn't exist, add it
-          if (switchError.code === 4902) {
-            await ethereumProvider.request({
-              method: "wallet_addEthereumChain",
-              params: [
-                {
-                  chainId: "0x221",
-                  chainName: "Flow EVM Testnet",
-                  nativeCurrency: {
-                    name: "Flow",
-                    symbol: "FLOW",
-                    decimals: 18,
-                  },
-                  rpcUrls: ["https://testnet.evm.nodes.onflow.org"],
-                  blockExplorerUrls: ["https://testnet.flowscan.org"],
-                },
-              ],
-            });
-          } else {
-            throw switchError;
-          }
-        });
+      // Check agent wallet balance first
+      const balance = await agentSigner.provider.getBalance(
+        agentSigner.address
+      );
+      const minBalance = ethers.parseUnits("0.01", "ether");
 
-      // Initialize provider after ensuring correct network
-      const provider = new ethers.BrowserProvider(ethereumProvider);
-      const signer = await provider.getSigner();
+      if (balance < minBalance) {
+        toast.error(`Insufficient funds in agent wallet. Required: 0.01 FLOW`);
+        return;
+      }
 
-      const contract = await ContractService.getContract(signer);
+      // Use redeemBountyAsAgent instead of redeemBounty
+      await PersonBountyService.redeemBountyAsAgent(bountyId!, user.id);
 
-      // Convert bountyId to BigInt for contract interaction
-      const tx = await contract.claimBounty(BigInt(bountyId));
-      await tx.wait();
-
-      router.push("/bounties");
+      toast.success("Bounty claimed successfully!");
+      router.push("/dashboard");
     } catch (error) {
       console.error("Failed to claim bounty:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to claim bounty"
+      );
     } finally {
       setIsClaimLoading(false);
     }
@@ -108,24 +87,16 @@ export default function VerifyPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Cleanup previous URL if it exists
+    // Cleanup previous URL
     if (previewUrl) {
       URL.revokeObjectURL(previewUrl);
     }
 
     setSelectedImage(file);
-    // Create object URL only on client side
-    if (typeof window !== "undefined") {
-      const objectUrl = URL.createObjectURL(file);
-      setPreviewUrl(objectUrl);
-    }
+    setPreviewUrl(URL.createObjectURL(file));
   };
 
-  const [bountyData, setBountyData] = useState<{
-    personId: string;
-    reward: string;
-    isActive: boolean;
-  } | null>(null);
+  const [bountyData, setBountyData] = useState<any>(null);
 
   // Fetch bounty data when component mounts
   useEffect(() => {
@@ -133,13 +104,10 @@ export default function VerifyPage() {
       if (!bountyId) return;
       try {
         const data = await PersonBountyService.getBounty(bountyId);
-        setBountyData({
-          personId: data.personId,
-          reward: ethers.formatUnits(data.reward, 18),
-          isActive: data.isActive,
-        });
-      } catch (err) {
-        console.error("Failed to fetch bounty:", err);
+        setBountyData(data);
+      } catch (error) {
+        console.error("Failed to fetch bounty data:", error);
+        toast.error("Failed to fetch bounty data");
       }
     };
 
@@ -147,9 +115,6 @@ export default function VerifyPage() {
       fetchBountyData();
     }
   }, [authenticated, bountyId]);
-
-  const { isConnected: isAgentConnected, signer: agentSigner } =
-    useAgentWallet();
 
   const handleVerify = async () => {
     if (!selectedImage || !bountyData || isVerifying) return;
@@ -173,26 +138,17 @@ export default function VerifyPage() {
         return;
       }
 
-      // Get the IPFS data and verify
-      const personData = await PersonBountyService.getPerson(
-        bountyData.personId
+      // Use PersonBountyService to verify the bounty
+      const result = await PersonBountyService.verifyBounty(
+        bountyId!,
+        selectedImage
       );
-      if (!personData?.ipfsHash) {
-        throw new Error("No IPFS data found for this bounty");
-      }
-
-      const formData = new FormData();
-      formData.append("file", selectedImage);
-      formData.append("ipfs_hash", personData.ipfsHash);
-      formData.append("threshold", "0.5");
-
-      const result = await FaceApiService.compareFaceWithIpfs(formData);
 
       if (result.success && result.match) {
         setVerificationResult({
           matched: true,
-          bountyAmount: bountyData.reward,
-          personId: bountyData.personId,
+          bountyAmount: ethers.formatUnits(result.bountyData.reward, 18),
+          personId: result.bountyData.personId,
         });
         toast.success("Face verification successful!");
       } else {

@@ -12,7 +12,7 @@ interface AgentWalletContextType {
   error: string | null;
   connect: (userId: string) => Promise<void>;
   reconnect: () => Promise<void>;
-  checkBalance: () => Promise<ethers.BigNumber>;
+  checkBalance: () => Promise<bigint>;
 }
 
 // Export the context so it can be imported directly
@@ -23,7 +23,7 @@ export const AgentWalletContext = createContext<AgentWalletContextType>({
   error: null,
   connect: async () => {},
   reconnect: async () => {},
-  checkBalance: async () => ethers.BigNumber.from(0),
+  checkBalance: async () => 0n,
 });
 
 export function AgentWalletProvider({
@@ -40,7 +40,7 @@ export function AgentWalletProvider({
     try {
       if (!signer) {
         console.log("No signer available to check balance");
-        return ethers.BigNumber.from(0);
+        return 0n;
       }
       const balance = await signer.provider.getBalance(signer.address);
       console.log("Agent wallet address:", signer.address);
@@ -48,7 +48,7 @@ export function AgentWalletProvider({
       return balance;
     } catch (err) {
       console.error("Error checking balance:", err);
-      return ethers.BigNumber.from(0);
+      return 0n;
     }
   };
 

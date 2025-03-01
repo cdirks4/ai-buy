@@ -8,9 +8,9 @@ export class FaceApiService {
     try {
       // Debug log the form data before sending
       console.log("Sending form data to Modal:", {
-        ipfsHash: formData.get('ipfs_hash'),
-        threshold: formData.get('threshold'),
-        hasFile: formData.has('file')
+        ipfsHash: formData.get("ipfs_hash"),
+        threshold: formData.get("threshold"),
+        hasFile: formData.has("file"),
       });
 
       const response = await fetch(MODAL_API_URL, {

@@ -2,6 +2,7 @@ import { ethers } from "ethers";
 import { agentKit } from "./agentkit";
 import { PersonBountyABI } from "@/constants/abi";
 import axios from "axios";
+import { FaceApiService } from "./faceApi";
 
 export class PersonBountyService {
   private static PINATA_JWT = process.env.PINATA_JWT;
@@ -94,52 +95,24 @@ export class PersonBountyService {
     return tx.wait();
   }
 
-  static async getPerson(id: string) {
+  static async getPerson(personId: string) {
+    const provider = await agentKit.provider;
+    const contract = new ethers.Contract(
+      this.CONTRACT_ADDRESS!,
+      this.ABI,
+      provider
+    );
+
     try {
-      console.log("Getting person data for ID:", id);
-      const provider = await this.getProvider();
-      const contract = new ethers.Contract(
-        this.CONTRACT_ADDRESS!,
-        this.ABI,
-        provider
-      );
-
-      const personData = await contract.people(id);
-      console.log("Raw person data from contract:", {
-        id: personData[0],
-        ipfsHash: personData[1],
-        detectionScore: personData[2],
-        createdAt: personData[3],
-      });
-
-      // Fetch face data from Pinata
-      const ipfsHash = personData[1];
-      if (!ipfsHash) {
-        throw new Error("No IPFS hash found for person");
-      }
-
-      let faceData = null;
-      try {
-        console.log("Fetching IPFS data with hash:", ipfsHash);
-        faceData = await this.getFromPinata(ipfsHash);
-        console.log("Face data from IPFS:", {
-          embeddingLength: faceData?.embedding?.length || 0,
-          hasLandmarks: !!faceData?.landmarks,
-        });
-      } catch (ipfsError) {
-        console.error("Failed to fetch IPFS data:", ipfsError);
-        // Continue without face data
-      }
-
+      const personData = await contract.people(personId);
       return {
-        id: personData[0],
-        ipfsHash: personData[1],
-        detectionScore: parseFloat(ethers.formatUnits(personData[2], 18)),
-        createdAt: personData[3].toString(),
-        faceData,
+        id: personId,
+        ipfsHash: personData.ipfsHash,
+        detectionScore: personData.detectionScore,
+        createdAt: personData.createdAt,
       };
     } catch (error) {
-      console.error("Error getting person:", error);
+      console.error("Error fetching person:", error);
       throw error;
     }
   }
@@ -176,42 +149,37 @@ export class PersonBountyService {
 
   static async verifyBounty(bountyId: string, imageFile: File) {
     try {
-      console.log("Verifying bounty:", { bountyId });
-
       // Get bounty data first
       const bountyData = await this.getBounty(bountyId);
-      if (!bountyData || !bountyData.isActive) {
-        throw new Error("Bounty not found or inactive");
+      if (!bountyData) {
+        throw new Error("Bounty not found");
       }
 
-      // Get person data using the existing getPerson method
+      // Get the person data to get the IPFS hash
       const personData = await this.getPerson(bountyData.personId);
       if (!personData || !personData.ipfsHash) {
         throw new Error("Person data or IPFS hash not found");
       }
 
-      // Create form data for the Modal endpoint
+      // Create form data for verification
       const formData = new FormData();
       formData.append("file", imageFile);
       formData.append("ipfs_hash", personData.ipfsHash);
-      formData.append("threshold", "0.5");
+      formData.append("threshold", "0.6"); // Adjust threshold as needed
 
-      // Call the Modal endpoint for face comparison
+      console.log("Verifying with data:", {
+        bountyId,
+        personId: bountyData.personId,
+        ipfsHash: personData.ipfsHash,
+      });
+
+      // Use FaceApiService to compare faces
       const result = await FaceApiService.compareFaceWithIpfs(formData);
-
-      if (!result.success) {
-        throw new Error(result.error || "Face verification failed");
-      }
 
       return {
         success: true,
         match: result.match,
-        similarity: result.similarity,
-        bountyData: {
-          personId: bountyData.personId,
-          reward: bountyData.reward,
-          isActive: bountyData.isActive,
-        },
+        bountyData,
       };
     } catch (error) {
       console.error("Error verifying bounty:", error);
@@ -258,15 +226,17 @@ export class PersonBountyService {
     try {
       // Use agentKit instead of direct private key
       const signer = agentKit.getSigner();
-      
+
       const contract = new ethers.Contract(
-        this.CONTRACT_ADDRESS,
+        this.CONTRACT_ADDRESS!,
         this.ABI,
         signer
       );
 
       // Get current balance
-      const balance = await signer.provider.getBalance(await signer.getAddress());
+      const balance = await signer.provider.getBalance(
+        await signer.getAddress()
+      );
       console.log(
         "Current wallet balance:",
         ethers.formatEther(balance),
@@ -276,32 +246,50 @@ export class PersonBountyService {
       // Set gas price
       const gasPrice = ethers.parseUnits("0.1", "gwei");
 
-      // Estimate gas
-      const gasEstimate = await contract.redeemBounty.estimateGas(
-        BigInt(bountyId),
-        redeemer,
-        { gasPrice }
-      );
-
-      const gasCost = gasPrice * gasEstimate;
-      console.log("Estimated gas cost:", ethers.formatEther(gasCost), "FLOW");
-
-      if (balance < gasCost) {
-        throw new Error(
-          `Insufficient funds for gas. Required: ${ethers.formatEther(
-            gasCost
-          )} FLOW, Balance: ${ethers.formatEther(balance)} FLOW`
-        );
-      }
-
-      // Execute transaction
+      // Execute transaction directly without gas estimation
       const tx = await contract.redeemBounty(BigInt(bountyId), redeemer, {
         gasPrice,
-        gasLimit: Math.ceil(Number(gasEstimate) * 1.2),
+        gasLimit: 300000, // Set a fixed gas limit
       });
 
       console.log("Transaction sent:", tx.hash);
-      return tx.wait();
+      return await tx.wait();
+    } catch (error) {
+      console.error("Error redeeming bounty:", error);
+      throw error;
+    }
+  }
+
+  static async redeemBounty(bountyId: string, redeemer: string) {
+    try {
+      const signer = agentKit.getSigner();
+      const contract = new ethers.Contract(
+        this.CONTRACT_ADDRESS!,
+        this.ABI,
+        signer
+      );
+
+      // Get current balance
+      const balance = await signer.provider.getBalance(
+        await signer.getAddress()
+      );
+      console.log(
+        "Current wallet balance:",
+        ethers.formatEther(balance),
+        "FLOW"
+      );
+
+      // Set gas price
+      const gasPrice = ethers.parseUnits("0.1", "gwei");
+
+      // Execute transaction directly without ENS resolution
+      const tx = await contract.redeemBounty(BigInt(bountyId), redeemer, {
+        gasPrice,
+        gasLimit: 300000, // Set a fixed gas limit since estimation fails
+      });
+
+      console.log("Transaction sent:", tx.hash);
+      return await tx.wait();
     } catch (error) {
       console.error("Error redeeming bounty:", error);
       throw error;
