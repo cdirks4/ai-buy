@@ -1,35 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "./EigenLayerVerifier.sol";
-import "./BytesLib.sol";
-
 contract PersonBounty {
-    using BytesLib for bytes;
-
-    IEigenLayerVerifier public eigenVerifier;
-    mapping(bytes32 => bool) public usedNullifiers;
-
     struct PersonData {
         string id;
-        string ipfsHash; // Contains face embeddings and landmarks
+        string ipfsHash;      // Contains face data
         uint256 detectionScore;
-        uint256 verifiedAt;
-        bytes32 nullifier;
-        bytes32 commitment;
-    }
-
-    // Remove the duplicate PersonData struct (around line 33)
-
-    // Add event declaration
-    event PersonCreated(
-        string indexed id,
-        string ipfsHash,
-        bytes32 indexed nullifier
-    );
-
-    constructor(address _eigenVerifier) {
-        eigenVerifier = IEigenLayerVerifier(_eigenVerifier);
+        uint256 createdAt;
     }
 
     struct Bounty {
@@ -47,11 +24,17 @@ contract PersonBounty {
 
     uint256 private nextBountyId = 1;
 
+    event PersonCreated(
+        string indexed id,
+        string ipfsHash
+    );
+
     event BountyCreated(
         uint256 indexed bountyId,
         string personId,
         uint256 reward
     );
+
     event BountyRedeemed(
         uint256 indexed bountyId,
         address redeemer,
@@ -63,58 +46,16 @@ contract PersonBounty {
         string memory ipfsHash,
         uint256 detectionScore
     ) public {
-        require(bytes(id).length > 0, "Invalid ID");
         require(bytes(people[id].id).length == 0, "Person already exists");
 
-        PersonData memory person = PersonData({
+        people[id] = PersonData({
             id: id,
             ipfsHash: ipfsHash,
             detectionScore: detectionScore,
-            verifiedAt: block.timestamp,
-            nullifier: bytes32(0),
-            commitment: bytes32(0)
+            createdAt: block.timestamp
         });
 
-        people[id] = person;
-    }
-
-    function createPersonWithProof(
-        string memory id,
-        string memory ipfsHash,
-        bytes memory proof,
-        bytes memory publicInputs,
-        uint256 detectionScore
-    ) public {
-        // Verify the ZK proof first
-        require(
-            eigenVerifier.verifyProof(proof, publicInputs),
-            "Invalid face proof"
-        );
-
-        // Add replay protection
-        bytes32 nullifier = bytes32(publicInputs.slice(0, 32));
-        require(!usedNullifiers[nullifier], "Proof already used");
-        usedNullifiers[nullifier] = true;
-
-        // Add commitment verification
-        bytes32 commitment = bytes32(publicInputs.slice(32, 32));
-        require(
-            keccak256(abi.encodePacked(ipfsHash)) == commitment,
-            "Invalid commitment"
-        );
-
-        // Create person with verified data
-        PersonData memory person = PersonData({
-            id: id,
-            ipfsHash: ipfsHash,
-            detectionScore: detectionScore,
-            verifiedAt: block.timestamp,
-            nullifier: nullifier,
-            commitment: commitment
-        });
-
-        people[id] = person;
-        emit PersonCreated(id, ipfsHash, nullifier);
+        emit PersonCreated(id, ipfsHash);
     }
 
     function createBounty(string memory personId, uint256 reward) public payable {
@@ -137,11 +78,20 @@ contract PersonBounty {
 
         emit BountyCreated(bountyId, personId, reward);
     }
-}
 
-interface IEigenLayerVerifier {
-    function verifyProof(
-        bytes memory proof,
-        bytes memory publicInputs
-    ) external pure returns (bool);
+    function redeemBounty(uint256 bountyId, address redeemer) public {
+        Bounty storage bounty = bounties[bountyId];
+        require(bounty.isActive, "Bounty is not active");
+        require(msg.sender != redeemer, "Agent cannot be redeemer");
+        
+        bounty.isActive = false;
+        // Transfer is now done by the agent (msg.sender)
+        payable(redeemer).transfer(bounty.reward);
+
+        emit BountyRedeemed(bountyId, redeemer, bounty.reward);
+    }
+
+    function getPersonBounties(string memory personId) public view returns (uint256[] memory) {
+        return personBounties[personId];
+    }
 }

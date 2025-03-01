@@ -4,10 +4,63 @@ import numpy as np
 import cv2
 import os
 from insightface.app import FaceAnalysis
+import gc
 
 def analyze_face(image_path):
     try:
         print(f"[Analyzer] Starting face analysis for: {image_path}", file=sys.stderr)
+        
+        # Initialize with CPU provider and minimal memory usage
+        app = FaceAnalysis(
+            providers=['CPUExecutionProvider'],
+            allowed_modules=['detection', 'recognition'],
+            det_size=(320, 320)  # Reduce detection size
+        )
+        app.prepare(ctx_id=-1)  # Force CPU usage
+        
+        # Read image with reduced size
+        img = cv2.imread(image_path)
+        if img is None:
+            return json.dumps({"error": "Failed to load image"})
+            
+        # Resize image if too large
+        max_size = 1024
+        height, width = img.shape[:2]
+        if height > max_size or width > max_size:
+            scale = max_size / max(height, width)
+            img = cv2.resize(img, None, fx=scale, fy=scale)
+            
+        # Convert to RGB
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        
+        # Detect faces
+        faces = app.get(img)
+        
+        # Clear memory
+        del img
+        gc.collect()
+        
+        if not faces:
+            return json.dumps({"error": "No faces detected"})
+            
+        face = faces[0]
+        result = {
+            'embedding': face.embedding.tolist(),
+            'landmarks': face.landmark_2d_106.tolist(),
+            'bbox': face.bbox.tolist(),
+            'det_score': float(face.det_score)
+        }
+        
+        # Clear more memory
+        del faces
+        del face
+        gc.collect()
+        
+        return json.dumps(result)
+        
+    except Exception as e:
+        print(f"[Analyzer] Error: {str(e)}", file=sys.stderr)
+        return json.dumps({"error": str(e)})
         
         # File verification checks with more detailed logging
         print(f"[Analyzer] File verification details:", file=sys.stderr)
