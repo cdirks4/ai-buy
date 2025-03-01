@@ -12,6 +12,7 @@ import { useWallets } from "@privy-io/react-auth";
 import { FaceApiService } from "@/services/faceApi"; // Add this import
 import toast from "react-hot-toast";
 // Add this import at the top with other imports
+import { useAgentWallet } from "@/hooks/useAgentWallet";
 
 export default function VerifyPage() {
   const { authenticated } = usePrivy();
@@ -145,6 +146,9 @@ export default function VerifyPage() {
     }
   }, [authenticated, bountyId]);
 
+  const { isConnected: isAgentConnected, signer: agentSigner } =
+    useAgentWallet();
+
   const handleVerify = async () => {
     if (!selectedImage || !bountyData || isVerifying) return;
 
@@ -153,6 +157,23 @@ export default function VerifyPage() {
 
       if (!isAgentConnected || !agentSigner) {
         throw new Error("Agent wallet not connected");
+      }
+
+      // Check agent wallet balance first
+      const balance = await agentSigner.provider.getBalance(
+        agentSigner.address
+      );
+      console.log("Agent wallet address:", agentSigner.address);
+      console.log("Current balance:", ethers.formatEther(balance), "FLOW");
+
+      // Minimum required balance (you may need to adjust this value)
+      const minBalance = ethers.parseUnits("0.01", "ether"); // 0.01 FLOW
+      if (balance < minBalance) {
+        throw new Error(
+          `Insufficient funds in agent wallet. Please fund the wallet with at least 0.01 FLOW. Current balance: ${ethers.formatEther(
+            balance
+          )} FLOW`
+        );
       }
 
       // Get the IPFS data for the bounty

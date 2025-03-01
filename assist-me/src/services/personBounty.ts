@@ -255,20 +255,63 @@ export class PersonBountyService {
   }
 
   static async redeemBountyAsAgent(bountyId: string, redeemer: string) {
-    const signer = agentKit.getSigner();
-    const contract = new ethers.Contract(
-      this.CONTRACT_ADDRESS,
-      this.ABI,
-      signer
-    );
-    const tx = await contract.redeemBounty(bountyId, redeemer);
-    return tx.wait();
+    try {
+      // Use agentKit instead of direct private key
+      const signer = agentKit.getSigner();
+      
+      const contract = new ethers.Contract(
+        this.CONTRACT_ADDRESS,
+        this.ABI,
+        signer
+      );
+
+      // Get current balance
+      const balance = await signer.provider.getBalance(await signer.getAddress());
+      console.log(
+        "Current wallet balance:",
+        ethers.formatEther(balance),
+        "FLOW"
+      );
+
+      // Set gas price
+      const gasPrice = ethers.parseUnits("0.1", "gwei");
+
+      // Estimate gas
+      const gasEstimate = await contract.redeemBounty.estimateGas(
+        BigInt(bountyId),
+        redeemer,
+        { gasPrice }
+      );
+
+      const gasCost = gasPrice * gasEstimate;
+      console.log("Estimated gas cost:", ethers.formatEther(gasCost), "FLOW");
+
+      if (balance < gasCost) {
+        throw new Error(
+          `Insufficient funds for gas. Required: ${ethers.formatEther(
+            gasCost
+          )} FLOW, Balance: ${ethers.formatEther(balance)} FLOW`
+        );
+      }
+
+      // Execute transaction
+      const tx = await contract.redeemBounty(BigInt(bountyId), redeemer, {
+        gasPrice,
+        gasLimit: Math.ceil(Number(gasEstimate) * 1.2),
+      });
+
+      console.log("Transaction sent:", tx.hash);
+      return tx.wait();
+    } catch (error) {
+      console.error("Error redeeming bounty:", error);
+      throw error;
+    }
   }
 
   static async getAllBounties() {
     const provider = await agentKit.provider;
     const contract = new ethers.Contract(
-      this.CONTRACT_ADDRESS,
+      this.CONTRACT_ADDRESS!,
       this.ABI,
       provider
     );

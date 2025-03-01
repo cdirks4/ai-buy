@@ -45,34 +45,32 @@ export default function DeployBountyPage() {
     try {
       setDeploymentStatus(null);
 
-      // Create form data with both image and reward
       const formData = new FormData();
       formData.append("image", selectedImage);
       formData.append("reward", reward);
 
-      // Create person and bounty in one transaction
       const response = await fetch("/api/deploy", {
         method: "POST",
         body: formData,
       });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || "Failed to deploy bounty");
-      }
+      const data = await response.json();
 
-      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to deploy bounty");
+      }
 
       setDeploymentStatus({
         success: true,
         message: "Bounty deployed successfully!",
-        bountyId: result.personId,
+        bountyId: data.personId,
       });
     } catch (error) {
       console.error("Deployment failed:", error);
       setDeploymentStatus({
         success: false,
-        message: error instanceof Error ? error.message : "Failed to deploy bounty",
+        message:
+          error instanceof Error ? error.message : "Failed to deploy bounty",
       });
     }
   };

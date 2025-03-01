@@ -133,7 +133,18 @@ export const PersonBountyABI = [
     type: "function",
   },
   {
-    inputs: [{ internalType: "uint256", name: "bountyId", type: "uint256" }],
+    inputs: [
+      {
+        internalType: "uint256",
+        name: "bountyId",
+        type: "uint256",
+      },
+      {
+        internalType: "address",
+        name: "redeemer",
+        type: "address",
+      },
+    ],
     name: "redeemBounty",
     outputs: [],
     stateMutability: "nonpayable",
