@@ -1,0 +1,51 @@
+{
+  "name": "assist-me",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@onflow/fcl": "^1.13.5",
+    "@privy-io/react-auth": "^2.4.3",
+    "@uniswap/v3-periphery": "^1.4.4",
+    "@urql/core": "^5.1.0",
+    "axios": "^1.8.1",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "ethers": "^6.13.5",
+    "groq-sdk": "^0.15.0",
+    "next": "15.1.7",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-hot-toast": "^2.5.2",
+    "tailwind-merge": "^3.0.1",
+    "urql": "^4.2.1",
+    "use-sync-external-store": "^1.4.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "15.1.7",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5"
+  },
+  "overrides": {
+    "use-sync-external-store": {
+      "react": "^19.0.0"
+    },
+    "valtio": {
+      "use-sync-external-store": "^1.4.0"
+    },
+    "@floating-ui/react": {
+      "react": "^19.0.0"
+    }
+  }
+}
