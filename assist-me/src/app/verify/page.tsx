@@ -118,61 +118,39 @@ export default function VerifyPage() {
     }
   }, [authenticated, bountyId]);
 
-  const handleVerify = async () => {
-    if (!selectedImage || !bountyData || isVerifying) return;
-
+  const handleVerify = async (file: File) => {
     try {
       setIsVerifying(true);
-      setVerificationResult(null); // Reset previous results
-
-      if (!isAgentConnected || !agentSigner) {
-        throw new Error("Agent wallet not connected");
-      }
-
-      // Check agent wallet balance first
-      const balance = await agentSigner.provider.getBalance(
-        agentSigner.address
-      );
-      const minBalance = ethers.parseUnits("0.01", "ether");
-
-      if (balance < minBalance) {
-        toast.error(`Insufficient funds in agent wallet. Required: 0.01 FLOW`);
+      if (!bountyId) {
+        toast.error("No bounty ID provided");
         return;
       }
 
-      // Use PersonBountyService to verify the bounty
+      // Get the user's wallet address
+      const userWallet = wallets[0]?.address;
+      if (!userWallet) {
+        toast.error("Please connect your wallet first");
+        return;
+      }
+
       const result = await PersonBountyService.verifyBounty(
-        bountyId!,
-        selectedImage
+        bountyId,
+        file,
+        userWallet
       );
+      setVerificationResult(result);
 
-      if (result.success) {
-        if (result.match) {
-          setVerificationResult({
-            matched: true,
-            bountyAmount: ethers.formatUnits(result.bountyData.reward, 18),
-            personId: result.bountyData.personId,
-            comparisonDetails: result.comparisonDetails,
-            bestMatch: result.bestMatch,
-          });
-
-          if (result.redeemed) {
-            toast.success("Face verified and bounty automatically claimed!");
-          } else if (result.registryMatch) {
-            toast.success("Face verified! Registered wallet found.");
-          } else {
-            toast.success("Face verified! No registered wallet found.");
-          }
+      if (result.match) {
+        if (result.redeemed) {
+          toast.success("Bounty claimed successfully!");
         } else {
-          setVerificationResult({
-            matched: false,
-            comparisonDetails: result.comparisonDetails,
-          });
-          toast.error("Face verification failed");
+          toast.error("Face matched but bounty claim failed");
         }
+      } else {
+        toast.error("Face did not match the bounty target");
       }
     } catch (error) {
-      console.error("Verification failed:", error);
+      console.error("Verification error:", error);
       toast.error(
         error instanceof Error ? error.message : "Verification failed"
       );
@@ -220,7 +198,7 @@ export default function VerifyPage() {
               )}
 
               <Button
-                onClick={handleVerify}
+                onClick={() => selectedImage && handleVerify(selectedImage)}
                 disabled={!selectedImage || isVerifying}
                 variant={
                   !selectedImage || isVerifying ? "secondary" : "default"

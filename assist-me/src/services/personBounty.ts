@@ -3,7 +3,7 @@ import { agentKit } from "./agentkit";
 import { PersonBountyABI } from "@/constants/abi";
 import axios from "axios";
 import { FaceApiService } from "./faceApi";
-
+import { FaceRegistrationABI } from "@/constants/abi";
 export class PersonBountyService {
   private static PINATA_JWT = process.env.PINATA_JWT;
   private static PINATA_API_URL = "https://api.pinata.cloud";
@@ -149,117 +149,133 @@ export class PersonBountyService {
 
   static async findWalletByFace(embedding: number[]): Promise<string | null> {
     try {
-      console.log("Searching for wallet by face embedding...");
       const provider = await this.getProvider();
-      const contract = new ethers.Contract(
-        this.CONTRACT_ADDRESS!,
-        this.ABI,
+      const registryAddress = process.env.NEXT_PUBLIC_FACE_REGISTRY_ADDRESS;
+
+      if (!registryAddress) {
+        console.error("Face registry address not configured");
+        throw new Error("Face registry address not configured");
+      }
+
+      console.log("Creating registry contract with address:", registryAddress);
+      const registryContract = new ethers.Contract(
+        registryAddress,
+        FaceRegistrationABI,
         provider
       );
 
-      // Call the contract method to find the most similar face
-      const result = await contract.findMostSimilarFace(embedding);
+      // Get total number of registrants
+      const count = await registryContract.getRegistrantCount();
+      console.log("Total registrants in registry:", count.toString());
 
-      console.log("Registry search result:", {
-        walletAddress: result.walletAddress,
-        similarity: result.similarity,
-        threshold: result.threshold,
-      });
+      // Check each registration
+      for (let i = 0; i < count; i++) {
+        const registrantAddress = await registryContract.registrants(i);
+        const registration = await registryContract.registrations(
+          registrantAddress
+        );
 
-      // Return the wallet address if similarity is above threshold
-      if (result.similarity > result.threshold) {
-        return result.walletAddress;
+        if (!registration.ipfsHash || registration.ipfsHash === "") {
+          console.log(
+            `Skipping empty registration for address ${registrantAddress}`
+          );
+          continue;
+        }
+
+        console.log(`Checking registration ${i + 1}/${count}:`, {
+          address: registrantAddress,
+          ipfsHash: registration.ipfsHash,
+        });
+
+        // Compare embeddings using new endpoint
+        const result = await FaceApiService.compareEmbeddingWithIpfs(
+          embedding,
+          registration.ipfsHash,
+          0.85
+        );
+
+        if (result.success && result.match) {
+          console.log("Found matching wallet:", {
+            address: registrantAddress,
+            similarity: result.similarity,
+          });
+          return registrantAddress;
+        }
       }
 
+      console.log("No matching wallet found in registry");
       return null;
     } catch (error) {
       console.error("Error searching face registry:", error);
+      if (error instanceof Error) {
+        console.error("Error details:", {
+          message: error.message,
+          stack: error.stack,
+        });
+      }
       return null;
     }
   }
 
-  static async verifyBounty(bountyId: string, imageFile: File) {
+  static async verifyBounty(
+    bountyId: string,
+    imageFile: File,
+    userWalletAddress: string
+  ) {
     try {
-      console.log("Starting bounty verification:", { bountyId });
+      console.log("Starting bounty verification:", {
+        bountyId,
+        userWalletAddress,
+      });
 
       // Get bounty data first
       const bountyData = await this.getBounty(bountyId);
-
-      console.log("Got bounty data:", {
-        bountyId,
-        personId: bountyData.personId,
-        ipfsHash: bountyData.ipfsHash,
-        hasIpfsHash: Boolean(bountyData.ipfsHash),
-      });
-
       if (!bountyData.ipfsHash) {
-        throw new Error(`No IPFS hash found for bounty ${bountyId}'s person`);
+        throw new Error("No IPFS hash found for bounty target");
       }
 
-      // Create form data for verification
+      // Compare with bounty target
       const formData = new FormData();
       formData.append("file", imageFile);
       formData.append("ipfs_hash", bountyData.ipfsHash);
       formData.append("threshold", "0.6");
 
-      console.log("Sending verification request with:", {
-        ipfsHash: bountyData.ipfsHash,
-        hasFile: Boolean(imageFile),
-        fileSize: imageFile.size,
-      });
-
-      // Use FaceApiService to compare faces
       const result = await FaceApiService.compareTwoFacesWithIpfs(formData);
-
-      console.log("Face comparison results:", {
-        success: result.success,
-        totalFaces: result.faces?.length,
-        bestMatch: result.best_match,
-      });
+      console.log("Face comparison results:", result);
 
       if (!result.success) {
         throw new Error(result.error || "Face comparison failed");
       }
 
-      // If we have a match, try to find the wallet in the registry
-      let registryMatch = null;
-      if (
-        result.success &&
-        result.best_match?.match &&
-        result.best_match.embedding
-      ) {
-        try {
-          const walletAddress = await this.findWalletByFace(
-            result.best_match.embedding
-          );
-          if (walletAddress) {
-            registryMatch = { wallet_address: walletAddress };
-            console.log("Found matching wallet in registry:", walletAddress);
+      // If the face matches the bounty target
+      if (result.success && result.best_match?.match) {
+        console.log(
+          "Face match found, redeeming to wallet:",
+          userWalletAddress
+        );
 
-            // Automatically redeem the bounty
-            await this.redeemBountyAsAgent(bountyId, walletAddress);
-            return {
-              success: true,
-              match: true,
-              bountyData,
-              comparisonDetails: result.faces || [],
-              bestMatch: result.best_match,
-              registryMatch,
-              redeemed: true,
-            };
-          }
-        } catch (error) {
-          console.error("Error searching face registry:", error);
-        }
+        // Automatically redeem the bounty to the user's wallet
+        await this.redeemBountyAsAgent(bountyId, userWalletAddress);
+
+        return {
+          success: true,
+          match: true,
+          bountyData,
+          comparisonDetails: result.faces || [],
+          bestMatch: result.best_match,
+          finderWallet: { address: userWalletAddress },
+          redeemed: true,
+        };
       }
 
+      // No match with bounty target
       return {
         success: true,
-        match: result.best_match?.match || false,
+        match: false,
         bountyData,
         comparisonDetails: result.faces || [],
         bestMatch: result.best_match,
-        registryMatch,
+        finderWallet: null,
         redeemed: false,
       };
     } catch (error) {

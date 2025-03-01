@@ -117,4 +117,97 @@ export class FaceApiService {
       throw error;
     }
   }
+
+  static async findFaceWallet(
+    imageFile: File,
+    registryIpfsHash: string
+  ): Promise<{
+    success: boolean;
+    match?: boolean;
+    similarity?: number;
+    error?: string;
+  }> {
+    try {
+      const formData = new FormData();
+      formData.append("file", imageFile);
+      formData.append("registry_ipfs_hash", registryIpfsHash);
+      formData.append("threshold", "0.85");
+
+      console.log("Sending face-wallet matching request:", {
+        registryIpfsHash,
+        hasFile: true,
+        fileSize: imageFile.size,
+      });
+
+      const response = await fetch(`${MODAL_API_URL}/find_face_wallet`, {
+        method: "POST",
+        body: formData,
+      });
+
+      const result = await response.json();
+      console.log("Face-wallet matching response:", result);
+
+      return result;
+    } catch (error) {
+      console.error("Error in face-wallet matching:", error);
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Face-wallet matching failed",
+      };
+    }
+  }
+
+  static async compareEmbeddingWithIpfs(
+    embedding: number[],
+    ipfsHash: string,
+    threshold: number = 0.85
+  ): Promise<{
+    success: boolean;
+    match?: boolean;
+    similarity?: number;
+    error?: string;
+  }> {
+    try {
+      const formData = new FormData();
+      formData.append("embedding", JSON.stringify(embedding));
+      formData.append("ipfs_hash", ipfsHash);
+      formData.append("threshold", threshold.toString());
+
+      console.log("Sending embedding comparison request:", {
+        ipfsHash,
+        embeddingLength: embedding.length,
+        threshold,
+      });
+
+      const response = await fetch(
+        "https://cdirks4--face-analysis-api-v0-2-compare-embeddings-with-ipfs.modal.run",
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API error: ${response.status} - ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log("Embedding comparison response:", result);
+
+      return result;
+    } catch (error) {
+      console.error("Error in embedding comparison:", error);
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Embedding comparison failed",
+      };
+    }
+  }
 }
