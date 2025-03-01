@@ -13,8 +13,10 @@ import { FaceApiService } from "@/services/faceApi"; // Add this import
 import toast from "react-hot-toast";
 // Add this import at the top with other imports
 import { useAgentWallet } from "@/hooks/useAgentWallet";
+import { Button } from "@/components/ui/Button";
 
 export default function VerifyPage() {
+  const router = useRouter();
   const { authenticated } = usePrivy();
   const { wallets } = useWallets();
   const { loading: bountyLoading } = usePersonBounty();
@@ -154,6 +156,7 @@ export default function VerifyPage() {
 
     try {
       setIsVerifying(true);
+      setVerificationResult(null); // Reset previous results
 
       if (!isAgentConnected || !agentSigner) {
         throw new Error("Agent wallet not connected");
@@ -163,24 +166,18 @@ export default function VerifyPage() {
       const balance = await agentSigner.provider.getBalance(
         agentSigner.address
       );
-      console.log("Agent wallet address:", agentSigner.address);
-      console.log("Current balance:", ethers.formatEther(balance), "FLOW");
+      const minBalance = ethers.parseUnits("0.01", "ether");
 
-      // Minimum required balance (you may need to adjust this value)
-      const minBalance = ethers.parseUnits("0.01", "ether"); // 0.01 FLOW
       if (balance < minBalance) {
-        throw new Error(
-          `Insufficient funds in agent wallet. Please fund the wallet with at least 0.01 FLOW. Current balance: ${ethers.formatEther(
-            balance
-          )} FLOW`
-        );
+        toast.error(`Insufficient funds in agent wallet. Required: 0.01 FLOW`);
+        return;
       }
 
-      // Get the IPFS data for the bounty
+      // Get the IPFS data and verify
       const personData = await PersonBountyService.getPerson(
         bountyData.personId
       );
-      if (!personData || !personData.ipfsHash) {
+      if (!personData?.ipfsHash) {
         throw new Error("No IPFS data found for this bounty");
       }
 
@@ -192,27 +189,22 @@ export default function VerifyPage() {
       const result = await FaceApiService.compareFaceWithIpfs(formData);
 
       if (result.success && result.match) {
-        // Get the user's wallet address
-        const userWallet = wallets[0];
-        if (!userWallet) throw new Error("User wallet not connected");
-
-        // Agent redeems the bounty on behalf of the user
-        await PersonBountyService.redeemBountyAsAgent(
-          bountyId!,
-          userWallet.address
-        );
-
-        toast.success("Bounty claimed successfully!");
-        router.push("/bounties");
+        setVerificationResult({
+          matched: true,
+          bountyAmount: bountyData.reward,
+          personId: bountyData.personId,
+        });
+        toast.success("Face verification successful!");
       } else {
+        setVerificationResult({
+          matched: false,
+        });
         toast.error("Face verification failed");
       }
     } catch (error) {
-      console.error("Verification/claiming failed:", error);
+      console.error("Verification failed:", error);
       toast.error(
-        error instanceof Error
-          ? error.message
-          : "Failed to verify and claim bounty"
+        error instanceof Error ? error.message : "Verification failed"
       );
     } finally {
       setIsVerifying(false);
@@ -234,7 +226,7 @@ export default function VerifyPage() {
           </div>
         ) : (
           <div className="space-y-6">
-            <div className="bg-white/5 rounded-xl p-6 backdrop-blur-sm border border-white/10">
+            <div className="bg-white/5 p-6 rounded-xl backdrop-blur-sm">
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-300 mb-2">
                   Upload Photo
@@ -256,25 +248,26 @@ export default function VerifyPage() {
                   />
                 </div>
               )}
-              <button
+
+              <Button
                 onClick={handleVerify}
                 disabled={!selectedImage || isVerifying}
-                className={`w-full py-3 px-4 ${
-                  !selectedImage || isVerifying
-                    ? "bg-blue-600/50 cursor-not-allowed"
-                    : "bg-blue-600 hover:bg-blue-700"
-                } rounded-lg transition-colors text-white font-medium`}
+                variant={
+                  !selectedImage || isVerifying ? "secondary" : "default"
+                }
+                className="w-full"
               >
                 {isVerifying ? "Verifying..." : "Verify Photo"}
-              </button>
+              </Button>
             </div>
+
             {verificationResult && (
               <div
-                className={`p-6 rounded-xl ${
+                className={`p-6 rounded-xl border backdrop-blur-sm ${
                   verificationResult.matched
                     ? "bg-green-500/10 border-green-500/20"
                     : "bg-red-500/10 border-red-500/20"
-                } border backdrop-blur-sm`}
+                }`}
               >
                 {verificationResult.matched ? (
                   <>
@@ -284,16 +277,14 @@ export default function VerifyPage() {
                     <p className="text-gray-300">
                       Bounty Amount: {verificationResult.bountyAmount} FLOW
                     </p>
-
-                    {verificationResult?.matched && (
-                      <button
-                        onClick={handleClaimBounty}
-                        disabled={isClaimLoading}
-                        className="mt-4 w-full py-2 px-4 bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded-lg transition-colors text-white font-medium"
-                      >
-                        {isClaimLoading ? "Claiming..." : "Claim Bounty"}
-                      </button>
-                    )}
+                    <Button
+                      onClick={handleClaimBounty}
+                      disabled={isClaimLoading}
+                      variant="default"
+                      className="mt-4 w-full"
+                    >
+                      {isClaimLoading ? "Claiming..." : "Claim Bounty"}
+                    </Button>
                   </>
                 ) : (
                   <p className="text-red-400">No matching bounty found.</p>
