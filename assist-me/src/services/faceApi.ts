@@ -34,7 +34,41 @@ export class FaceApiService {
       throw error;
     }
   }
+  static async compareTwoFacesWithIpfs(formData: FormData) {
+    try {
+      // Debug log the form data before sending
+      console.log("Sending form data to Modal for two-face comparison:", {
+        ipfsHash: formData.get("ipfs_hash"),
+        threshold: formData.get("threshold"),
+        hasFile: formData.has("file"),
+      });
 
+      const response = await fetch(
+        "https://cdirks4--face-analysis-api-v0-2-compare-two-faces-with-ipfs.modal.run",
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Modal API error:", {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorText,
+        });
+        throw new Error(`API error: ${response.status} - ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log("Two-face comparison response:", result);
+      return result;
+    } catch (error) {
+      console.error("Two-face comparison error:", error);
+      throw error;
+    }
+  }
   static async analyzeFace(buffer: Buffer | FormData) {
     try {
       let formData: FormData;

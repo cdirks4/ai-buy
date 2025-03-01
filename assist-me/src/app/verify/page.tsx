@@ -52,7 +52,7 @@ export default function VerifyPage() {
       await PersonBountyService.redeemBountyAsAgent(bountyId!, user.id);
 
       toast.success("Bounty claimed successfully!");
-      router.push("/dashboard");
+      // router.push("/dashboard");
     } catch (error) {
       console.error("Failed to claim bounty:", error);
       toast.error(
@@ -72,6 +72,8 @@ export default function VerifyPage() {
     matched: boolean;
     bountyAmount?: string;
     personId?: string;
+    comparisonDetails: any[];
+    bestMatch: any;
   } | null>(null);
 
   // Cleanup effect for object URLs
@@ -144,18 +146,30 @@ export default function VerifyPage() {
         selectedImage
       );
 
-      if (result.success && result.match) {
-        setVerificationResult({
-          matched: true,
-          bountyAmount: ethers.formatUnits(result.bountyData.reward, 18),
-          personId: result.bountyData.personId,
-        });
-        toast.success("Face verification successful!");
-      } else {
-        setVerificationResult({
-          matched: false,
-        });
-        toast.error("Face verification failed");
+      if (result.success) {
+        if (result.match) {
+          setVerificationResult({
+            matched: true,
+            bountyAmount: ethers.formatUnits(result.bountyData.reward, 18),
+            personId: result.bountyData.personId,
+            comparisonDetails: result.comparisonDetails,
+            bestMatch: result.bestMatch,
+          });
+
+          if (result.redeemed) {
+            toast.success("Face verified and bounty automatically claimed!");
+          } else if (result.registryMatch) {
+            toast.success("Face verified! Registered wallet found.");
+          } else {
+            toast.success("Face verified! No registered wallet found.");
+          }
+        } else {
+          setVerificationResult({
+            matched: false,
+            comparisonDetails: result.comparisonDetails,
+          });
+          toast.error("Face verification failed");
+        }
       }
     } catch (error) {
       console.error("Verification failed:", error);

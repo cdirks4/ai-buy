@@ -147,39 +147,120 @@ export class PersonBountyService {
     }
   }
 
-  static async verifyBounty(bountyId: string, imageFile: File) {
+  static async findWalletByFace(embedding: number[]): Promise<string | null> {
     try {
-      // Get bounty data first
-      const bountyData = await this.getBounty(bountyId);
-      if (!bountyData) {
-        throw new Error("Bounty not found");
+      console.log("Searching for wallet by face embedding...");
+      const provider = await this.getProvider();
+      const contract = new ethers.Contract(
+        this.CONTRACT_ADDRESS!,
+        this.ABI,
+        provider
+      );
+
+      // Call the contract method to find the most similar face
+      const result = await contract.findMostSimilarFace(embedding);
+
+      console.log("Registry search result:", {
+        walletAddress: result.walletAddress,
+        similarity: result.similarity,
+        threshold: result.threshold,
+      });
+
+      // Return the wallet address if similarity is above threshold
+      if (result.similarity > result.threshold) {
+        return result.walletAddress;
       }
 
-      // Get the person data to get the IPFS hash
-      const personData = await this.getPerson(bountyData.personId);
-      if (!personData || !personData.ipfsHash) {
-        throw new Error("Person data or IPFS hash not found");
+      return null;
+    } catch (error) {
+      console.error("Error searching face registry:", error);
+      return null;
+    }
+  }
+
+  static async verifyBounty(bountyId: string, imageFile: File) {
+    try {
+      console.log("Starting bounty verification:", { bountyId });
+
+      // Get bounty data first
+      const bountyData = await this.getBounty(bountyId);
+
+      console.log("Got bounty data:", {
+        bountyId,
+        personId: bountyData.personId,
+        ipfsHash: bountyData.ipfsHash,
+        hasIpfsHash: Boolean(bountyData.ipfsHash),
+      });
+
+      if (!bountyData.ipfsHash) {
+        throw new Error(`No IPFS hash found for bounty ${bountyId}'s person`);
       }
 
       // Create form data for verification
       const formData = new FormData();
       formData.append("file", imageFile);
-      formData.append("ipfs_hash", personData.ipfsHash);
-      formData.append("threshold", "0.6"); // Adjust threshold as needed
+      formData.append("ipfs_hash", bountyData.ipfsHash);
+      formData.append("threshold", "0.6");
 
-      console.log("Verifying with data:", {
-        bountyId,
-        personId: bountyData.personId,
-        ipfsHash: personData.ipfsHash,
+      console.log("Sending verification request with:", {
+        ipfsHash: bountyData.ipfsHash,
+        hasFile: Boolean(imageFile),
+        fileSize: imageFile.size,
       });
 
       // Use FaceApiService to compare faces
-      const result = await FaceApiService.compareFaceWithIpfs(formData);
+      const result = await FaceApiService.compareTwoFacesWithIpfs(formData);
+
+      console.log("Face comparison results:", {
+        success: result.success,
+        totalFaces: result.faces?.length,
+        bestMatch: result.best_match,
+      });
+
+      if (!result.success) {
+        throw new Error(result.error || "Face comparison failed");
+      }
+
+      // If we have a match, try to find the wallet in the registry
+      let registryMatch = null;
+      if (
+        result.success &&
+        result.best_match?.match &&
+        result.best_match.embedding
+      ) {
+        try {
+          const walletAddress = await this.findWalletByFace(
+            result.best_match.embedding
+          );
+          if (walletAddress) {
+            registryMatch = { wallet_address: walletAddress };
+            console.log("Found matching wallet in registry:", walletAddress);
+
+            // Automatically redeem the bounty
+            await this.redeemBountyAsAgent(bountyId, walletAddress);
+            return {
+              success: true,
+              match: true,
+              bountyData,
+              comparisonDetails: result.faces || [],
+              bestMatch: result.best_match,
+              registryMatch,
+              redeemed: true,
+            };
+          }
+        } catch (error) {
+          console.error("Error searching face registry:", error);
+        }
+      }
 
       return {
         success: true,
-        match: result.match,
+        match: result.best_match?.match || false,
         bountyData,
+        comparisonDetails: result.faces || [],
+        bestMatch: result.best_match,
+        registryMatch,
+        redeemed: false,
       };
     } catch (error) {
       console.error("Error verifying bounty:", error);
@@ -188,27 +269,50 @@ export class PersonBountyService {
   }
 
   static async getBounty(bountyId: string) {
-    const provider = await agentKit.provider;
-    const contract = new ethers.Contract(
-      this.CONTRACT_ADDRESS,
-      this.ABI,
-      provider
-    );
-
     try {
-      // Use the bounties mapping directly with numeric bountyId
+      const provider = await agentKit.provider;
+      const contract = new ethers.Contract(
+        this.CONTRACT_ADDRESS!,
+        this.ABI,
+        provider
+      );
+
+      // Get bounty data
       const bountyData = await contract.bounties(bountyId);
+      console.log("Retrieved bounty data:", {
+        bountyId,
+        personId: bountyData.personId.toString(),
+        isActive: bountyData.isActive,
+      });
+
+      // Get person data to get the IPFS hash
+      const personId = bountyData.personId;
+      const personData = await contract.people(personId);
+
+      console.log("Retrieved person data:", {
+        personId: personId.toString(),
+        ipfsHash: personData.ipfsHash,
+        hasIpfsHash: Boolean(personData.ipfsHash),
+      });
+
+      if (!personData.ipfsHash) {
+        throw new Error(`No IPFS hash found for person ID ${personId}`);
+      }
+
       return {
-        personId: bountyData.personId,
+        id: bountyId,
+        personId: personId.toString(),
         reward: bountyData.reward,
         isActive: bountyData.isActive,
         creator: bountyData.creator,
-        createdAt: bountyData.createdAt,
-        bountyId: bountyId,
+        createdAt: bountyData.createdAt.toString(),
+        ipfsHash: personData.ipfsHash, // This should be a string from the contract
       };
     } catch (error) {
       console.error("Error fetching bounty:", error);
-      throw new Error(`Failed to fetch bounty #${bountyId}`);
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      throw new Error(`Failed to fetch bounty #${bountyId}: ${errorMessage}`);
     }
   }
 
@@ -224,9 +328,7 @@ export class PersonBountyService {
 
   static async redeemBountyAsAgent(bountyId: string, redeemer: string) {
     try {
-      // Use agentKit instead of direct private key
       const signer = agentKit.getSigner();
-
       const contract = new ethers.Contract(
         this.CONTRACT_ADDRESS!,
         this.ABI,
@@ -243,17 +345,44 @@ export class PersonBountyService {
         "FLOW"
       );
 
-      // Set gas price
+      // Set gas parameters
       const gasPrice = ethers.parseUnits("0.1", "gwei");
+      const gasLimit = 300000; // Fixed gas limit
 
-      // Execute transaction directly without gas estimation
-      const tx = await contract.redeemBounty(BigInt(bountyId), redeemer, {
-        gasPrice,
-        gasLimit: 300000, // Set a fixed gas limit
+      // Convert redeemer to a valid address format
+      let redeemerAddress: string;
+      try {
+        // If it's already a valid address, this will normalize it
+        redeemerAddress = ethers.getAddress(redeemer);
+      } catch (err) {
+        // If it's not a valid address, create one from the user ID
+        // This is a deterministic way to create an address from a user ID
+        const hashedId = ethers.id(redeemer); // keccak256 hash of the user ID
+        redeemerAddress = ethers.getAddress(hashedId.slice(0, 42)); // Take first 40 chars + '0x'
+      }
+
+      console.log("Redeeming bounty with params:", {
+        bountyId: BigInt(bountyId),
+        redeemer: redeemerAddress,
+        gasPrice: gasPrice.toString(),
+        gasLimit,
       });
 
+      // Execute transaction with fixed parameters
+      const tx = await contract.redeemBounty(
+        BigInt(bountyId),
+        redeemerAddress,
+        {
+          gasPrice,
+          gasLimit,
+        }
+      );
+
       console.log("Transaction sent:", tx.hash);
-      return await tx.wait();
+      const receipt = await tx.wait();
+      console.log("Transaction confirmed:", receipt);
+
+      return receipt;
     } catch (error) {
       console.error("Error redeeming bounty:", error);
       throw error;
@@ -279,17 +408,45 @@ export class PersonBountyService {
         "FLOW"
       );
 
-      // Set gas price
+      // Set gas parameters
       const gasPrice = ethers.parseUnits("0.1", "gwei");
+      const gasLimit = 300000; // Fixed gas limit
 
-      // Execute transaction directly without ENS resolution
-      const tx = await contract.redeemBounty(BigInt(bountyId), redeemer, {
-        gasPrice,
-        gasLimit: 300000, // Set a fixed gas limit since estimation fails
+      // Ensure redeemer is a valid address
+      let redeemerAddress = redeemer;
+      if (!ethers.isAddress(redeemer)) {
+        console.warn(
+          "Invalid redeemer address format, attempting to convert..."
+        );
+        try {
+          redeemerAddress = ethers.getAddress(redeemer);
+        } catch (err) {
+          throw new Error(`Invalid redeemer address: ${redeemer}`);
+        }
+      }
+
+      console.log("Redeeming bounty with params:", {
+        bountyId: BigInt(bountyId),
+        redeemer: redeemerAddress,
+        gasPrice: gasPrice.toString(),
+        gasLimit,
       });
 
+      // Execute transaction with fixed parameters
+      const tx = await contract.redeemBounty(
+        BigInt(bountyId),
+        redeemerAddress,
+        {
+          gasPrice,
+          gasLimit,
+        }
+      );
+
       console.log("Transaction sent:", tx.hash);
-      return await tx.wait();
+      const receipt = await tx.wait();
+      console.log("Transaction confirmed:", receipt);
+
+      return receipt;
     } catch (error) {
       console.error("Error redeeming bounty:", error);
       throw error;

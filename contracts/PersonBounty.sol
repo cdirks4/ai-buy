@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 contract PersonBounty {
     struct PersonData {
         string id;
-        string ipfsHash;      // Contains face data
+        string ipfsHash; // Contains face data
         uint256 detectionScore;
         uint256 createdAt;
     }
@@ -24,10 +24,7 @@ contract PersonBounty {
 
     uint256 private nextBountyId = 1;
 
-    event PersonCreated(
-        string indexed id,
-        string ipfsHash
-    );
+    event PersonCreated(string indexed id, string ipfsHash);
 
     event BountyCreated(
         uint256 indexed bountyId,
@@ -58,12 +55,15 @@ contract PersonBounty {
         emit PersonCreated(id, ipfsHash);
     }
 
-    function createBounty(string memory personId, uint256 reward) public payable {
+    function createBounty(
+        string memory personId,
+        uint256 reward
+    ) public payable {
         require(bytes(people[personId].id).length > 0, "Person must exist");
         require(msg.value >= reward, "Insufficient bounty amount");
 
         uint256 bountyId = nextBountyId++;
-        
+
         Bounty memory bounty = Bounty({
             personId: personId,
             reward: reward,
@@ -82,16 +82,18 @@ contract PersonBounty {
     function redeemBounty(uint256 bountyId, address redeemer) public {
         Bounty storage bounty = bounties[bountyId];
         require(bounty.isActive, "Bounty is not active");
-        require(msg.sender != redeemer, "Agent cannot be redeemer");
-        
+        require(bounty.creator == msg.sender, "Only bounty creator can redeem");
+        require(msg.sender != redeemer, "Creator cannot be redeemer");
+
         bounty.isActive = false;
-        // Transfer is now done by the agent (msg.sender)
         payable(redeemer).transfer(bounty.reward);
 
         emit BountyRedeemed(bountyId, redeemer, bounty.reward);
     }
 
-    function getPersonBounties(string memory personId) public view returns (uint256[] memory) {
+    function getPersonBounties(
+        string memory personId
+    ) public view returns (uint256[] memory) {
         return personBounties[personId];
     }
 }
